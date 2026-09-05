@@ -1,0 +1,1616 @@
+: package com.repair;
+
+import javax.swing.*;
+
+public class Main {
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        SwingUtilities.invokeLater(() -> {
+            LoginFrame loginFrame = new LoginFrame();
+            loginFrame.setVisible(true);
+        });
+    }
+}
+: package com.repair;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
+public class RepairRecord {
+    private int id;
+    private LocalDate breakDownDate;
+    private String machineNo;
+    private String spindle;
+    private String repairStatus;
+    private String airCoveringError;
+    private String repairError;
+    private String repairReason;
+    private LocalDate repairDate;
+    private String sampleNo;
+    
+    private static int nextId = 1;
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/d/yyyy");
+    private static final DateTimeFormatter formatter2 = DateTimeFormatter.ofPattern("yyyy/M/d");
+    private static final DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+    
+    public RepairRecord() {
+        this.id = nextId++;
+    }
+    
+    public RepairRecord(LocalDate breakDownDate, String machineNo, String spindle,
+                        String repairStatus, String airCoveringError, String repairError,
+                        String repairReason, LocalDate repairDate, String sampleNo) {
+        this.id = nextId++;
+        this.breakDownDate = breakDownDate;
+        this.machineNo = machineNo;
+        this.spindle = spindle;
+        this.repairStatus = repairStatus;
+        this.airCoveringError = airCoveringError;
+        this.repairError = repairError;
+        this.repairReason = repairReason;
+        this.repairDate = repairDate;
+        this.sampleNo = sampleNo;
+    }
+    
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
+    
+    public LocalDate getBreakDownDate() { return breakDownDate; }
+    public void setBreakDownDate(LocalDate breakDownDate) { this.breakDownDate = breakDownDate; }
+    public String getBreakDownDateString() { 
+        return breakDownDate != null ? breakDownDate.format(displayFormatter) : ""; 
+    }
+    
+    public String getMachineNo() { return machineNo; }
+    public void setMachineNo(String machineNo) { this.machineNo = machineNo; }
+    
+    public String getSpindle() { return spindle; }
+    public void setSpindle(String spindle) { this.spindle = spindle; }
+    
+    public String getRepairStatus() { return repairStatus; }
+    public void setRepairStatus(String repairStatus) { this.repairStatus = repairStatus; }
+    
+    public String getAirCoveringError() { return airCoveringError; }
+    public void setAirCoveringError(String airCoveringError) { this.airCoveringError = airCoveringError; }
+    
+    public String getRepairError() { return repairError; }
+    public void setRepairError(String repairError) { this.repairError = repairError; }
+    
+    public String getRepairReason() { return repairReason; }
+    public void setRepairReason(String repairReason) { this.repairReason = repairReason; }
+    
+    public LocalDate getRepairDate() { return repairDate; }
+    public void setRepairDate(LocalDate repairDate) { this.repairDate = repairDate; }
+    public String getRepairDateString() { 
+        return repairDate != null ? repairDate.format(displayFormatter) : ""; 
+    }
+    
+    public String getSampleNo() { return sampleNo; }
+    public void setSampleNo(String sampleNo) { this.sampleNo = sampleNo; }
+    
+    public static void resetIdCounter() { nextId = 1; }
+    
+    public static LocalDate parseDate(String dateStr) {
+        if (dateStr == null || dateStr.trim().isEmpty()) return null;
+        dateStr = dateStr.trim();
+        try {
+            return LocalDate.parse(dateStr, formatter);
+        } catch (DateTimeParseException e) {
+            try {
+                return LocalDate.parse(dateStr, formatter2);
+            } catch (DateTimeParseException e2) {
+                return null;
+            }
+        }
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("RepairRecord[id=%d, date=%s, machine=%s, spindle=%s, error=%s]", 
+            id, getBreakDownDateString(), machineNo, spindle, repairError);
+    }
+}
+: package com.repair;
+
+import javax.swing.*;
+import java.io.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+public class DatabaseManager {
+    private static final String DATA_FILE = "repair_data.csv";
+    private static final DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+    private List<RepairRecord> records;
+    private static DatabaseManager instance;
+    
+    private DatabaseManager() {
+        records = new ArrayList<>();
+        loadData();
+    }
+    
+    public static synchronized DatabaseManager getInstance() {
+        if (instance == null) {
+            instance = new DatabaseManager();
+        }
+        return instance;
+    }
+    
+    public void addRecord(RepairRecord record) {
+        records.add(record);
+        saveData();
+    }
+    
+    public void updateRecord(RepairRecord record) {
+        for (int i = 0; i < records.size(); i++) {
+            if (records.get(i).getId() == record.getId()) {
+                records.set(i, record);
+                saveData();
+                return;
+            }
+        }
+    }
+    
+    public void deleteRecord(int id) {
+        records.removeIf(r -> r.getId() == id);
+        saveData();
+    }
+    
+    public List<RepairRecord> getAllRecords() {
+        return new ArrayList<>(records);
+    }
+    
+    public List<RepairRecord> getFilteredRecords(String dateFilter, String machineFilter, 
+                                                  String spindleFilter, String errorFilter) {
+        List<RepairRecord> filtered = new ArrayList<>();
+        for (RepairRecord r : records) {
+            boolean match = true;
+            if (dateFilter != null && !dateFilter.isEmpty() && !dateFilter.equals("All Dates")) {
+                if (r.getBreakDownDate() == null || !r.getBreakDownDateString().equals(dateFilter)) match = false;
+            }
+            if (machineFilter != null && !machineFilter.isEmpty() && !machineFilter.equals("All")) {
+                if (!machineFilter.equals(r.getMachineNo())) match = false;
+            }
+            if (spindleFilter != null && !spindleFilter.isEmpty() && !spindleFilter.equals("All")) {
+                if (r.getSpindle() == null || !r.getSpindle().equals(spindleFilter)) match = false;
+            }
+            if (errorFilter != null && !errorFilter.isEmpty() && !errorFilter.equals("All Errors")) {
+                if (r.getRepairError() == null || !r.getRepairError().equals(errorFilter)) match = false;
+            }
+            if (match) filtered.add(r);
+        }
+        return filtered;
+    }
+    
+    public List<String> getUniqueMachines() {
+        Set<String> machines = new TreeSet<>();
+        for (RepairRecord r : records) {
+            if (r.getMachineNo() != null && !r.getMachineNo().isEmpty() && 
+                !r.getMachineNo().contains(",") && !r.getMachineNo().toLowerCase().contains("machine")) {
+                machines.add(r.getMachineNo());
+            }
+        }
+        return new ArrayList<>(machines);
+    }
+    
+    public List<String> getUniqueSpindles() {
+        Set<String> spindles = new TreeSet<>(new Comparator<String>() {
+            @Override
+            public int compare(String s1, String s2) {
+                try {
+                    int i1 = Integer.parseInt(s1);
+                    int i2 = Integer.parseInt(s2);
+                    return Integer.compare(i1, i2);
+                } catch (NumberFormatException e) {
+                    return s1.compareTo(s2);
+                }
+            }
+        });
+        for (RepairRecord r : records) {
+            if (r.getSpindle() != null && !r.getSpindle().isEmpty() && 
+                !r.getSpindle().contains(",") && !r.getSpindle().toLowerCase().contains("spindle") &&
+                !r.getSpindle().contains("සිට")) {
+                try {
+                    Integer.parseInt(r.getSpindle());
+                    spindles.add(r.getSpindle());
+                } catch (NumberFormatException e) {}
+            }
+        }
+        return new ArrayList<>(spindles);
+    }
+    
+    public List<String> getUniqueSamples() {
+        Set<String> samples = new TreeSet<>();
+        for (RepairRecord r : records) {
+            if (r.getSampleNo() != null && !r.getSampleNo().isEmpty() && 
+                !r.getSampleNo().toLowerCase().contains("sampal")) {
+                samples.add(r.getSampleNo());
+            }
+        }
+        return new ArrayList<>(samples);
+    }
+    
+    public List<String> getUniqueRepairErrors() {
+        Set<String> errors = new TreeSet<>();
+        for (RepairRecord r : records) {
+            if (r.getRepairError() != null && !r.getRepairError().isEmpty() && 
+                !r.getRepairError().toLowerCase().contains("repair error")) {
+                errors.add(r.getRepairError());
+            }
+        }
+        return new ArrayList<>(errors);
+    }
+    
+    public List<String> getUniqueAirCoveringErrors() {
+        Set<String> errors = new TreeSet<>();
+        for (RepairRecord r : records) {
+            if (r.getAirCoveringError() != null && !r.getAirCoveringError().isEmpty() && 
+                !r.getAirCoveringError().toLowerCase().contains("air covering")) {
+                errors.add(r.getAirCoveringError());
+            }
+        }
+        return new ArrayList<>(errors);
+    }
+    
+    public List<String> getUniqueDates() {
+        Set<String> dates = new TreeSet<>();
+        for (RepairRecord r : records) {
+            if (r.getBreakDownDate() != null) {
+                dates.add(r.getBreakDownDateString());
+            }
+        }
+        return new ArrayList<>(dates);
+    }
+    
+    public double calculateDailyPercentage(LocalDate date) {
+        List<RepairRecord> dayRecords = new ArrayList<>();
+        for (RepairRecord r : records) {
+            if (r.getBreakDownDate() != null && r.getBreakDownDate().equals(date)) {
+                dayRecords.add(r);
+            }
+        }
+        if (dayRecords.isEmpty()) return 0.0;
+        
+        long errorCount = dayRecords.stream()
+            .filter(r -> r.getRepairError() != null && !r.getRepairError().isEmpty() 
+                && !r.getRepairError().equalsIgnoreCase("No Error")
+                && !r.getRepairError().equalsIgnoreCase("no Error"))
+            .count();
+        return (errorCount * 100.0) / dayRecords.size();
+    }
+    
+    public Map<String, Double> calculateWeeklyPercentage(LocalDate weekStart) {
+        Map<String, Double> result = new LinkedHashMap<>();
+        String[] days = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+        for (int i = 0; i < 7; i++) {
+            LocalDate day = weekStart.plusDays(i);
+            double pct = calculateDailyPercentage(day);
+            result.put(day.format(displayFormatter) + " (" + days[i] + ")", pct);
+        }
+        return result;
+    }
+    
+    public int getTotalRecords() {
+        return records.size();
+    }
+    
+    public int getErrorCountForDate(LocalDate date) {
+        int count = 0;
+        for (RepairRecord r : records) {
+            if (r.getBreakDownDate() != null && r.getBreakDownDate().equals(date)) {
+                if (r.getRepairError() != null && !r.getRepairError().isEmpty() 
+                    && !r.getRepairError().equalsIgnoreCase("No Error")
+                    && !r.getRepairError().equalsIgnoreCase("no Error")) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+    
+    public int getTotalCountForDate(LocalDate date) {
+        int count = 0;
+        for (RepairRecord r : records) {
+            if (r.getBreakDownDate() != null && r.getBreakDownDate().equals(date)) {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    private void loadData() {
+        File file = new File(DATA_FILE);
+        if (!file.exists()) {
+            System.out.println("Data file not found: " + DATA_FILE);
+            return;
+        }
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line = reader.readLine();
+            int maxId = 0;
+            
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+                
+                String[] parts = parseCSVLine(line);
+                if (parts.length < 5) continue;
+                
+                try {
+                    RepairRecord r = new RepairRecord();
+                    r.setId(++maxId);
+                    
+                    if (parts.length > 0 && !parts[0].trim().isEmpty()) {
+                        r.setBreakDownDate(RepairRecord.parseDate(parts[0].trim()));
+                    }
+                    if (parts.length > 1) {
+                        r.setMachineNo(parts[1].trim());
+                    }
+                    if (parts.length > 2) {
+                        r.setSpindle(parts[2].trim());
+                    }
+                    if (parts.length > 3) {
+                        r.setRepairStatus(parts[3].trim());
+                    }
+                    if (parts.length > 4) {
+                        r.setAirCoveringError(parts[4].trim());
+                    }
+                    if (parts.length > 5) {
+                        r.setRepairError(parts[5].trim());
+                    }
+                    if (parts.length > 6) {
+                        r.setRepairReason(parts[6].trim());
+                    }
+                    if (parts.length > 7 && !parts[7].trim().isEmpty()) {
+                        r.setRepairDate(RepairRecord.parseDate(parts[7].trim()));
+                    }
+                    if (parts.length > 8) {
+                        r.setSampleNo(parts[8].trim());
+                    }
+                    
+                    records.add(r);
+                    
+                } catch (Exception e) {
+                    System.err.println("Error parsing line: " + line + " - " + e.getMessage());
+                }
+            }
+            
+            RepairRecord.resetIdCounter();
+            for (int i = 0; i < maxId; i++) {
+                RepairRecord rec = new RepairRecord();
+                rec.setId(0);
+            }
+            
+            System.out.println("Loaded " + records.size() + " records from " + DATA_FILE);
+            
+        } catch (IOException e) {
+            System.err.println("Error loading data: " + e.getMessage());
+        }
+    }
+    
+    private void saveData() {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(DATA_FILE))) {
+            writer.println("Break Down Date,Machine no,Spiudle,R.E,Air Covering Error,Repair Error,Repair Reason,Repair Date,Sampal no");
+            for (RepairRecord r : records) {
+                writer.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                    r.getBreakDownDateString(),
+                    escapeCSV(r.getMachineNo()),
+                    escapeCSV(r.getSpindle()),
+                    escapeCSV(r.getRepairStatus()),
+                    escapeCSV(r.getAirCoveringError()),
+                    escapeCSV(r.getRepairError()),
+                    escapeCSV(r.getRepairReason()),
+                    r.getRepairDateString(),
+                    escapeCSV(r.getSampleNo())
+                );
+            }
+        } catch (IOException e) {
+            System.err.println("Error saving data: " + e.getMessage());
+        }
+    }
+    
+    private String escapeCSV(String value) {
+        if (value == null) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+    
+    private String[] parseCSVLine(String line) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    sb.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
+                tokens.add(sb.toString().trim());
+                sb = new StringBuilder();
+            } else {
+                sb.append(c);
+            }
+        }
+        tokens.add(sb.toString().trim());
+        
+        return tokens.toArray(new String[0]);
+    }
+    
+    public void clearAll() {
+        records.clear();
+        RepairRecord.resetIdCounter();
+        saveData();
+    }
+}
+: package com.repair;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
+public class LoginFrame extends JFrame {
+    private JTextField usernameField;
+    private JPasswordField passwordField;
+    private JButton loginButton;
+    private JLabel statusLabel;
+    
+    private static final String DEFAULT_USER = "admin";
+    private static final String DEFAULT_PASS = "admin123";
+    
+    public LoginFrame() {
+        setTitle("🔐 Air Covering Machine Repair System - Login");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(480, 400);
+        setLocationRelativeTo(null);
+        setResizable(false);
+        
+        initComponents();
+    }
+    
+    private void initComponents() {
+        JPanel mainPanel = new JPanel(new GridBagLayout());
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(30, 40, 30, 40));
+        mainPanel.setBackground(new Color(240, 242, 245));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 5, 8, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        JLabel titleLabel = new JLabel("🔐 System Login", SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 26));
+        titleLabel.setForeground(new Color(33, 37, 41));
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
+        mainPanel.add(titleLabel, gbc);
+        
+        JLabel subLabel = new JLabel("Air Covering Machine Repair Tracking", SwingConstants.CENTER);
+        subLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        subLabel.setForeground(new Color(108, 117, 125));
+        gbc.gridy = 1; gbc.insets = new Insets(2, 5, 25, 5);
+        mainPanel.add(subLabel, gbc);
+        
+        gbc.gridwidth = 1;
+        gbc.insets = new Insets(10, 5, 10, 5);
+        JLabel userLabel = new JLabel("👤 Username:");
+        userLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        gbc.gridx = 0; gbc.gridy = 2;
+        mainPanel.add(userLabel, gbc);
+        
+        usernameField = new JTextField(15);
+        usernameField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        usernameField.setPreferredSize(new Dimension(220, 35));
+        gbc.gridx = 1;
+        mainPanel.add(usernameField, gbc);
+        
+        JLabel passLabel = new JLabel("🔑 Password:");
+        passLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        gbc.gridx = 0; gbc.gridy = 3;
+        mainPanel.add(passLabel, gbc);
+        
+        passwordField = new JPasswordField(15);
+        passwordField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        passwordField.setPreferredSize(new Dimension(220, 35));
+        passwordField.setEchoChar('●');
+        gbc.gridx = 1;
+        mainPanel.add(passwordField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        gbc.insets = new Insets(25, 5, 10, 5);
+        loginButton = new JButton("🔓 Login to System");
+        loginButton.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        loginButton.setPreferredSize(new Dimension(280, 45));
+        loginButton.setBackground(new Color(0, 123, 255));
+        loginButton.setForeground(Color.WHITE);
+        loginButton.setFocusPainted(false);
+        loginButton.setBorderPainted(false);
+        loginButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        mainPanel.add(loginButton, gbc);
+        
+        gbc.gridy = 5; gbc.insets = new Insets(5, 5, 5, 5);
+        statusLabel = new JLabel(" ", SwingConstants.CENTER);
+        statusLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        statusLabel.setForeground(Color.RED);
+        mainPanel.add(statusLabel, gbc);
+        
+        gbc.gridy = 6;
+        JLabel footerLabel = new JLabel("Default: admin / admin123", SwingConstants.CENTER);
+        footerLabel.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        footerLabel.setForeground(new Color(150, 150, 150));
+        mainPanel.add(footerLabel, gbc);
+        
+        add(mainPanel);
+        
+        loginButton.addActionListener(e -> attemptLogin());
+        passwordField.addActionListener(e -> attemptLogin());
+        usernameField.addActionListener(e -> passwordField.requestFocus());
+    }
+    
+    private void attemptLogin() {
+        String user = usernameField.getText().trim();
+        String pass = new String(passwordField.getPassword());
+        
+        if (user.isEmpty() || pass.isEmpty()) {
+            statusLabel.setText("⚠️ Please enter both username and password");
+            return;
+        }
+        
+        if (user.equals(DEFAULT_USER) && pass.equals(DEFAULT_PASS)) {
+            statusLabel.setText("✅ Login successful!");
+            statusLabel.setForeground(new Color(0, 150, 0));
+            
+            Timer timer = new Timer(800, e -> {
+                dispose();
+                SwingUtilities.invokeLater(() -> {
+                    MainFrame mainFrame = new MainFrame();
+                    mainFrame.setVisible(true);
+                });
+            });
+            timer.setRepeats(false);
+            timer.start();
+        } else {
+            statusLabel.setText("❌ Invalid username or password");
+            statusLabel.setForeground(Color.RED);
+            passwordField.setText("");
+            passwordField.requestFocus();
+        }
+    }
+    
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        SwingUtilities.invokeLater(() -> new LoginFrame().setVisible(true));
+    }
+}
+: package com.repair;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
+public class MainFrame extends JFrame {
+    private DataTablePanel tablePanel;
+    private DataEntryPanel entryPanel;
+    private WeeklyReportPanel reportPanel;
+    private JLabel statusBarLabel;
+    
+    public MainFrame() {
+        setTitle("🔧 Air Covering Machine Repair Tracking System");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1350, 850);
+        setLocationRelativeTo(null);
+        setMinimumSize(new Dimension(1100, 700));
+        
+        initComponents();
+        updateStatusBar();
+    }
+    
+    private void initComponents() {
+        JMenuBar menuBar = new JMenuBar();
+        menuBar.setBackground(new Color(52, 58, 64));
+        
+        JMenu fileMenu = createMenu("📁 File");
+        JMenuItem exitItem = createMenuItem("🚪 Exit");
+        exitItem.addActionListener(e -> System.exit(0));
+        fileMenu.add(exitItem);
+        menuBar.add(fileMenu);
+        
+        JMenu dataMenu = createMenu("💾 Data");
+        JMenuItem refreshItem = createMenuItem("🔄 Refresh Data");
+        refreshItem.addActionListener(e -> {
+            tablePanel.refreshTable();
+            updateStatusBar();
+        });
+        JMenuItem clearItem = createMenuItem("🗑️ Clear All Data");
+        clearItem.addActionListener(e -> {
+            int confirm = JOptionPane.showConfirmDialog(this,
+                "Are you sure you want to delete ALL records?\nThis cannot be undone!",
+                "Confirm Clear All", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (confirm == JOptionPane.YES_OPTION) {
+                DatabaseManager.getInstance().clearAll();
+                tablePanel.refreshTable();
+                updateStatusBar();
+                JOptionPane.showMessageDialog(this, "All data cleared!");
+            }
+        });
+        dataMenu.add(refreshItem);
+        dataMenu.addSeparator();
+        dataMenu.add(clearItem);
+        menuBar.add(dataMenu);
+        
+        JMenu helpMenu = createMenu("❓ Help");
+        JMenuItem aboutItem = createMenuItem("ℹ️ About");
+        aboutItem.addActionListener(e -> showAboutDialog());
+        helpMenu.add(aboutItem);
+        menuBar.add(helpMenu);
+        
+        setJMenuBar(menuBar);
+        
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabbedPane.setBackground(new Color(245, 247, 250));
+        
+        tablePanel = new DataTablePanel();
+        entryPanel = new DataEntryPanel(tablePanel);
+        reportPanel = new WeeklyReportPanel();
+        
+        tabbedPane.addTab("📋 Data Entry", entryPanel);
+        tabbedPane.addTab("📊 View Records", tablePanel);
+        tabbedPane.addTab("📈 Weekly Report", reportPanel);
+        
+        tabbedPane.addChangeListener(e -> {
+            if (tabbedPane.getSelectedIndex() == 1) {
+                tablePanel.refreshTable();
+            } else if (tabbedPane.getSelectedIndex() == 2) {
+                reportPanel.refreshReport();
+            }
+            updateStatusBar();
+        });
+        
+        add(tabbedPane, BorderLayout.CENTER);
+        
+        JPanel statusBar = new JPanel(new BorderLayout());
+        statusBar.setBackground(new Color(52, 58, 64));
+        statusBar.setBorder(BorderFactory.createEmptyBorder(5, 15, 5, 15));
+        statusBar.setPreferredSize(new Dimension(getWidth(), 30));
+        
+        statusBarLabel = new JLabel("Ready");
+        statusBarLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        statusBarLabel.setForeground(Color.WHITE);
+        statusBar.add(statusBarLabel, BorderLayout.WEST);
+        
+        add(statusBar, BorderLayout.SOUTH);
+    }
+    
+    private JMenu createMenu(String title) {
+        JMenu menu = new JMenu(title);
+        menu.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        menu.setForeground(Color.WHITE);
+        return menu;
+    }
+    
+    private JMenuItem createMenuItem(String title) {
+        JMenuItem item = new JMenuItem(title);
+        item.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        return item;
+    }
+    
+    private void updateStatusBar() {
+        int total = DatabaseManager.getInstance().getTotalRecords();
+        statusBarLabel.setText("📊 Total Records: " + total + " | 🔧 Air Covering Machine Repair System");
+    }
+    
+    private void showAboutDialog() {
+        JOptionPane.showMessageDialog(this,
+            "🔧 Air Covering Machine Repair Tracking System\n" +
+            "Version 1.0\n\n" +
+            "Features:\n" +
+            "• Login System\n" +
+            "• Machine No: AJ-01 to AJ-07\n" +
+            "• Spindle: 01 to 30\n" +
+            "• All Repair Errors from Actual Data\n" +
+            "• Date Filtering\n" +
+            "• Weekly Percentage Report\n" +
+            "• Auto-save to CSV\n\n" +
+            "Built with Java Swing",
+            "About", JOptionPane.INFORMATION_MESSAGE);
+    }
+}
+ : package com.repair;
+
+import javax.swing.*;
+import javax.swing.border.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
+public class DataEntryPanel extends JPanel {
+    private JComboBox<String> machineCombo;
+    private JComboBox<String> spindleCombo;
+    private JComboBox<String> repairStatusCombo;
+    private JComboBox<String> airErrorCombo;
+    private JComboBox<String> repairErrorCombo;
+    private JComboBox<String> sampleCombo;
+    private JTextField breakDownDateField;
+    private JTextField repairDateField;
+    private JTextArea repairReasonArea;
+    private JButton saveButton;
+    private JButton clearButton;
+    private JLabel statusLabel;
+    private DataTablePanel tablePanel;
+    
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+    
+    public DataEntryPanel(DataTablePanel tablePanel) {
+        this.tablePanel = tablePanel;
+        initComponents();
+        populateDropdowns();
+    }
+    
+    private void initComponents() {
+        setLayout(new BorderLayout(10, 10));
+        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        setBackground(new Color(245, 247, 250));
+        
+        JLabel titleLabel = new JLabel("📋 New Repair Record Entry", SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        titleLabel.setForeground(new Color(33, 37, 41));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+        add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBackground(new Color(245, 247, 250));
+        formPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200)),
+            BorderFactory.createEmptyBorder(20, 25, 20, 25)
+        ));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 10, 8, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        int row = 0;
+        
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("📅 Break Down Date (YYYY/MM/DD):"), gbc);
+        gbc.gridx = 1;
+        breakDownDateField = createTextField("2026/07/15");
+        formPanel.add(breakDownDateField, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🏭 Machine No:"), gbc);
+        gbc.gridx = 1;
+        machineCombo = new JComboBox<>();
+        machineCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        machineCombo.setPreferredSize(new Dimension(280, 32));
+        formPanel.add(machineCombo, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🔩 Spindle Number:"), gbc);
+        gbc.gridx = 1;
+        spindleCombo = new JComboBox<>();
+        spindleCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        spindleCombo.setPreferredSize(new Dimension(280, 32));
+        formPanel.add(spindleCombo, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🔍 R.E (Repair Status):"), gbc);
+        gbc.gridx = 1;
+        repairStatusCombo = new JComboBox<>(new String[]{"-- Select --", "ok", "no", "?", "OK", "No"});
+        repairStatusCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        repairStatusCombo.setPreferredSize(new Dimension(280, 32));
+        formPanel.add(repairStatusCombo, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("⚠️ Air Covering Error:"), gbc);
+        gbc.gridx = 1;
+        airErrorCombo = new JComboBox<>();
+        airErrorCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        airErrorCombo.setPreferredSize(new Dimension(280, 32));
+        airErrorCombo.setEditable(true);
+        formPanel.add(airErrorCombo, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🔧 Repair Error:"), gbc);
+        gbc.gridx = 1;
+        repairErrorCombo = new JComboBox<>();
+        repairErrorCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        repairErrorCombo.setPreferredSize(new Dimension(280, 32));
+        repairErrorCombo.setEditable(true);
+        formPanel.add(repairErrorCombo, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        formPanel.add(createLabel("📝 Repair Reason:"), gbc);
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
+        repairReasonArea = new JTextArea(3, 20);
+        repairReasonArea.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        repairReasonArea.setLineWrap(true);
+        repairReasonArea.setWrapStyleWord(true);
+        repairReasonArea.setBorder(BorderFactory.createLineBorder(new Color(180, 180, 180)));
+        JScrollPane reasonScroll = new JScrollPane(repairReasonArea);
+        reasonScroll.setPreferredSize(new Dimension(280, 60));
+        formPanel.add(reasonScroll, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🔧 Repair Date (YYYY/MM/DD):"), gbc);
+        gbc.gridx = 1;
+        repairDateField = createTextField("2026/07/15");
+        formPanel.add(repairDateField, gbc);
+        
+        row++;
+        gbc.gridx = 0; gbc.gridy = row;
+        formPanel.add(createLabel("🔬 Sample Number:"), gbc);
+        gbc.gridx = 1;
+        sampleCombo = new JComboBox<>();
+        sampleCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sampleCombo.setPreferredSize(new Dimension(280, 32));
+        sampleCombo.setEditable(true);
+        formPanel.add(sampleCombo, gbc);
+        
+        add(formPanel, BorderLayout.CENTER);
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        buttonPanel.setBackground(new Color(245, 247, 250));
+        
+        saveButton = createButton("💾 Save Record", new Color(40, 167, 69));
+        clearButton = createButton("🔄 Clear Form", new Color(108, 117, 125));
+        
+        buttonPanel.add(saveButton);
+        buttonPanel.add(clearButton);
+        
+        statusLabel = new JLabel(" ", SwingConstants.CENTER);
+        statusLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        statusLabel.setForeground(new Color(40, 167, 69));
+        
+        JPanel southPanel = new JPanel(new BorderLayout());
+        southPanel.setBackground(new Color(245, 247, 250));
+        southPanel.add(buttonPanel, BorderLayout.CENTER);
+        southPanel.add(statusLabel, BorderLayout.SOUTH);
+        add(southPanel, BorderLayout.SOUTH);
+        
+        saveButton.addActionListener(e -> saveRecord());
+        clearButton.addActionListener(e -> clearForm());
+    }
+    
+    private void populateDropdowns() {
+        DatabaseManager db = DatabaseManager.getInstance();
+        
+        machineCombo.addItem("-- Select Machine --");
+        for (String m : db.getUniqueMachines()) {
+            machineCombo.addItem(m);
+        }
+        
+        spindleCombo.addItem("-- Select Spindle --");
+        for (int i = 1; i <= 30; i++) {
+            spindleCombo.addItem(String.format("%02d", i));
+        }
+        
+        airErrorCombo.addItem("-- Select or Type --");
+        for (String e : db.getUniqueAirCoveringErrors()) {
+            airErrorCombo.addItem(e);
+        }
+        
+        repairErrorCombo.addItem("-- Select or Type --");
+        for (String e : db.getUniqueRepairErrors()) {
+            repairErrorCombo.addItem(e);
+        }
+        
+        sampleCombo.addItem("-- Select or Type --");
+        for (String s : db.getUniqueSamples()) {
+            sampleCombo.addItem(s);
+        }
+    }
+    
+    private JLabel createLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setForeground(new Color(33, 37, 41));
+        return label;
+    }
+    
+    private JTextField createTextField(String placeholder) {
+        JTextField field = new JTextField(20);
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setPreferredSize(new Dimension(280, 32));
+        field.setText(placeholder);
+        field.setForeground(Color.GRAY);
+        field.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                if (field.getText().equals(placeholder)) {
+                    field.setText("");
+                    field.setForeground(Color.BLACK);
+                }
+            }
+            @Override
+            public void focusLost(FocusEvent e) {
+                if (field.getText().isEmpty()) {
+                    field.setText(placeholder);
+                    field.setForeground(Color.GRAY);
+                }
+            }
+        });
+        return field;
+    }
+    
+    private JButton createButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setPreferredSize(new Dimension(150, 40));
+        button.setBackground(bgColor);
+        button.setForeground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return button;
+    }
+    
+    private void saveRecord() {
+        try {
+            String dateStr = breakDownDateField.getText().trim();
+            if (dateStr.isEmpty() || dateStr.equals("2026/07/15")) {
+                dateStr = "2026/07/15";
+            }
+            LocalDate breakDownDate = LocalDate.parse(dateStr, formatter);
+            
+            if (machineCombo.getSelectedIndex() <= 0) {
+                showError("Please select a Machine Number");
+                return;
+            }
+            String machineNo = (String) machineCombo.getSelectedItem();
+            
+            if (spindleCombo.getSelectedIndex() <= 0) {
+                showError("Please select a Spindle Number");
+                return;
+            }
+            String spindle = (String) spindleCombo.getSelectedItem();
+            
+            String reStatus = repairStatusCombo.getSelectedIndex() > 0 ? 
+                (String) repairStatusCombo.getSelectedItem() : "";
+            
+            String airError = airErrorCombo.getSelectedIndex() > 0 || airErrorCombo.getSelectedItem() != null ? 
+                (String) airErrorCombo.getSelectedItem() : "";
+            if (airError.equals("-- Select or Type --")) airError = "";
+            
+            String repairError = repairErrorCombo.getSelectedIndex() > 0 || repairErrorCombo.getSelectedItem() != null ? 
+                (String) repairErrorCombo.getSelectedItem() : "";
+            if (repairError.equals("-- Select or Type --")) repairError = "";
+            
+            String repairReason = repairReasonArea.getText().trim();
+            
+            String repairDateStr = repairDateField.getText().trim();
+            LocalDate repairDate = null;
+            if (!repairDateStr.isEmpty() && !repairDateStr.equals("2026/07/15")) {
+                repairDate = LocalDate.parse(repairDateStr, formatter);
+            }
+            
+            String sampleNo = sampleCombo.getSelectedItem() != null ? 
+                (String) sampleCombo.getSelectedItem() : "";
+            if (sampleNo.equals("-- Select or Type --")) sampleNo = "";
+            
+            RepairRecord record = new RepairRecord(breakDownDate, machineNo, spindle, 
+                reStatus, airError, repairError, repairReason, repairDate, sampleNo);
+            DatabaseManager.getInstance().addRecord(record);
+            
+            statusLabel.setText("✅ Record saved successfully! ID: " + record.getId());
+            statusLabel.setForeground(new Color(40, 167, 69));
+            
+            if (tablePanel != null) {
+                tablePanel.refreshTable();
+            }
+            
+            clearForm();
+            
+        } catch (DateTimeParseException ex) {
+            showError("Invalid date format. Use YYYY/MM/DD");
+        } catch (Exception ex) {
+            showError("Error: " + ex.getMessage());
+            ex.printStackTrace();
+        }
+    }
+    
+    private void clearForm() {
+        breakDownDateField.setText("2026/07/15");
+        breakDownDateField.setForeground(Color.GRAY);
+        machineCombo.setSelectedIndex(0);
+        spindleCombo.setSelectedIndex(0);
+        repairStatusCombo.setSelectedIndex(0);
+        airErrorCombo.setSelectedIndex(0);
+        repairErrorCombo.setSelectedIndex(0);
+        repairReasonArea.setText("");
+        repairDateField.setText("2026/07/15");
+        repairDateField.setForeground(Color.GRAY);
+        sampleCombo.setSelectedIndex(0);
+        statusLabel.setText(" ");
+    }
+    
+    private void showError(String message) {
+        statusLabel.setText("❌ " + message);
+        statusLabel.setForeground(Color.RED);
+        JOptionPane.showMessageDialog(this, message, "Validation Error", JOptionPane.ERROR_MESSAGE);
+    }
+}
+[9/5, 16:04] : package com.repair;
+
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.List;
+
+public class DataTablePanel extends JPanel {
+    private JTable dataTable;
+    private DefaultTableModel tableModel;
+    private JComboBox<String> filterDateCombo;
+    private JComboBox<String> filterMachineCombo;
+    private JComboBox<String> filterSpindleCombo;
+    private JComboBox<String> filterErrorCombo;
+    private JButton applyFilterButton;
+    private JButton clearFilterButton;
+    private JButton deleteButton;
+    private JButton refreshButton;
+    private JLabel recordCountLabel;
+    private JLabel percentageLabel;
+    
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+    private static final String[] COLUMN_NAMES = {
+        "ID", "Break Down Date", "Machine No", "Spindle", "R.E", 
+        "Air Covering Error", "Repair Error", "Repair Reason", "Repair Date", "Sample No"
+    };
+    
+    public DataTablePanel() {
+        initComponents();
+        refreshTable();
+    }
+    
+    private void initComponents() {
+        setLayout(new BorderLayout(10, 10));
+        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        setBackground(new Color(245, 247, 250));
+        
+        JLabel titleLabel = new JLabel("📊 Repair Records", SwingConstants.LEFT);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        titleLabel.setForeground(new Color(33, 37, 41));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        filterPanel.setBackground(new Color(230, 235, 240));
+        filterPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(180, 180, 180)),
+                "🔎 Filter by Date / Machine / Spindle / Error",
+                javax.swing.border.TitledBorder.LEFT,
+                javax.swing.border.TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 12)
+            ),
+            BorderFactory.createEmptyBorder(5, 10, 5, 10)
+        ));
+        
+        filterPanel.add(new JLabel("📅 Date:"));
+        filterDateCombo = new JComboBox<>();
+        filterDateCombo.setPreferredSize(new Dimension(140, 28));
+        filterDateCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        filterPanel.add(filterDateCombo);
+        
+        filterPanel.add(new JLabel("🏭 Machine:"));
+        filterMachineCombo = new JComboBox<>();
+        filterMachineCombo.setPreferredSize(new Dimension(100, 28));
+        filterMachineCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        filterPanel.add(filterMachineCombo);
+        
+        filterPanel.add(new JLabel("🔩 Spindle:"));
+        filterSpindleCombo = new JComboBox<>();
+        filterSpindleCombo.setPreferredSize(new Dimension(90, 28));
+        filterSpindleCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        filterPanel.add(filterSpindleCombo);
+        
+        filterPanel.add(new JLabel("🔧 Error:"));
+        filterErrorCombo = new JComboBox<>();
+        filterErrorCombo.setPreferredSize(new Dimension(220, 28));
+        filterErrorCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        filterPanel.add(filterErrorCombo);
+        
+        applyFilterButton = createSmallButton("🔍 Apply Filter", new Color(0, 123, 255));
+        clearFilterButton = createSmallButton("❌ Clear", new Color(108, 117, 125));
+        refreshButton = createSmallButton("🔄 Refresh", new Color(23, 162, 184));
+        
+        filterPanel.add(applyFilterButton);
+        filterPanel.add(clearFilterButton);
+        filterPanel.add(refreshButton);
+        
+        tableModel = new DefaultTableModel(COLUMN_NAMES, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        
+        dataTable = new JTable(tableModel);
+        dataTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        dataTable.setRowHeight(28);
+        dataTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        dataTable.setGridColor(new Color(220, 220, 220));
+        dataTable.setShowGrid(true);
+        
+        JTableHeader header = dataTable.getTableHeader();
+        header.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        header.setBackground(new Color(52, 58, 64));
+        header.setForeground(Color.WHITE);
+        header.setPreferredSize(new Dimension(header.getWidth(), 35));
+        
+        TableColumnModel columnModel = dataTable.getColumnModel();
+        columnModel.getColumn(0).setPreferredWidth(50);
+        columnModel.getColumn(1).setPreferredWidth(110);
+        columnModel.getColumn(2).setPreferredWidth(80);
+        columnModel.getColumn(3).setPreferredWidth(60);
+        columnModel.getColumn(4).setPreferredWidth(50);
+        columnModel.getColumn(5).setPreferredWidth(180);
+        columnModel.getColumn(6).setPreferredWidth(180);
+        columnModel.getColumn(7).setPreferredWidth(200);
+        columnModel.getColumn(8).setPreferredWidth(100);
+        columnModel.getColumn(9).setPreferredWidth(90);
+        
+        dataTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 249, 250));
+                    
+                    if (column == 4 && value != null) {
+                        String val = value.toString().toLowerCase();
+                        if (val.equals("no")) {
+                            c.setForeground(new Color(220, 53, 69));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        } else if (val.equals("ok")) {
+                            c.setForeground(new Color(40, 167, 69));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        } else {
+                            c.setForeground(new Color(255, 193, 7));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        }
+                    } else {
+                        c.setForeground(Color.BLACK);
+                        c.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                    }
+                }
+                setHorizontalAlignment(column == 0 || column == 3 || column == 4 ? SwingConstants.CENTER : SwingConstants.LEFT);
+                return c;
+            }
+        });
+        
+        JScrollPane scrollPane = new JScrollPane(dataTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200)));
+        
+        JPanel statsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 5));
+        statsPanel.setBackground(new Color(245, 247, 250));
+        statsPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
+        
+        recordCountLabel = new JLabel("📋 Total Records: 0");
+        recordCountLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        
+        percentageLabel = new JLabel("📈 Daily Error %: 0.00%");
+        percentageLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        percentageLabel.setForeground(new Color(0, 123, 255));
+        
+        deleteButton = createSmallButton("🗑️ Delete Selected", new Color(220, 53, 69));
+        
+        statsPanel.add(recordCountLabel);
+        statsPanel.add(percentageLabel);
+        statsPanel.add(Box.createHorizontalStrut(50));
+        statsPanel.add(deleteButton);
+        
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.add(filterPanel, BorderLayout.NORTH);
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        centerPanel.add(statsPanel, BorderLayout.SOUTH);
+        add(centerPanel, BorderLayout.CENTER);
+        
+        applyFilterButton.addActionListener(e -> applyFilters());
+        clearFilterButton.addActionListener(e -> clearFilters());
+        refreshButton.addActionListener(e -> refreshTable());
+        deleteButton.addActionListener(e -> deleteSelectedRecord());
+    }
+    
+    private JButton createSmallButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        button.setPreferredSize(new Dimension(130, 28));
+        button.setBackground(bgColor);
+        button.setForeground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        return button;
+    }
+    
+    public void refreshTable() {
+        tableModel.setRowCount(0);
+        List<RepairRecord> records = DatabaseManager.getInstance().getAllRecords();
+        
+        updateFilterDropdowns();
+        
+        for (RepairRecord r : records) {
+            tableModel.addRow(new Object[]{
+                r.getId(),
+                r.getBreakDownDateString(),
+                r.getMachineNo(),
+                r.getSpindle(),
+                r.getRepairStatus(),
+                r.getAirCoveringError(),
+                r.getRepairError(),
+                r.getRepairReason(),
+                r.getRepairDateString(),
+                r.getSampleNo()
+            });
+        }
+        
+        recordCountLabel.setText("📋 Total Records: " + records.size());
+        updatePercentage();
+    }
+    
+    private void updateFilterDropdowns() {
+        DatabaseManager db = DatabaseManager.getInstance();
+        
+        String selectedDate = filterDateCombo.getSelectedItem() != null ? 
+            (String) filterDateCombo.getSelectedItem() : null;
+        String selectedMachine = filterMachineCombo.getSelectedItem() != null ? 
+            (String) filterMachineCombo.getSelectedItem() : null;
+        String selectedSpindle = filterSpindleCombo.getSelectedItem() != null ? 
+            (String) filterSpindleCombo.getSelectedItem() : null;
+        String selectedError = filterErrorCombo.getSelectedItem() != null ? 
+            (String) filterErrorCombo.getSelectedItem() : null;
+        
+        filterDateCombo.removeAllItems();
+        filterDateCombo.addItem("All Dates");
+        for (String d : db.getUniqueDates()) {
+            filterDateCombo.addItem(d);
+        }
+        if (selectedDate != null) filterDateCombo.setSelectedItem(selectedDate);
+        
+        filterMachineCombo.removeAllItems();
+        filterMachineCombo.addItem("All");
+        for (String m : db.getUniqueMachines()) {
+            filterMachineCombo.addItem(m);
+        }
+        if (selectedMachine != null) filterMachineCombo.setSelectedItem(selectedMachine);
+        
+        filterSpindleCombo.removeAllItems();
+        filterSpindleCombo.addItem("All");
+        for (int i = 1; i <= 30; i++) {
+            filterSpindleCombo.addItem(String.format("%02d", i));
+        }
+        if (selectedSpindle != null) filterSpindleCombo.setSelectedItem(selectedSpindle);
+        
+        filterErrorCombo.removeAllItems();
+        filterErrorCombo.addItem("All Errors");
+        for (String e : db.getUniqueRepairErrors()) {
+            filterErrorCombo.addItem(e);
+        }
+        if (selectedError != null) filterErrorCombo.setSelectedItem(selectedError);
+    }
+    
+    private void applyFilters() {
+        tableModel.setRowCount(0);
+        
+        String dateFilter = filterDateCombo.getSelectedIndex() > 0 ? 
+            (String) filterDateCombo.getSelectedItem() : null;
+        String machineFilter = filterMachineCombo.getSelectedIndex() > 0 ? 
+            (String) filterMachineCombo.getSelectedItem() : null;
+        String spindleFilter = filterSpindleCombo.getSelectedIndex() > 0 ? 
+            (String) filterSpindleCombo.getSelectedItem() : null;
+        String errorFilter = filterErrorCombo.getSelectedIndex() > 0 ? 
+            (String) filterErrorCombo.getSelectedItem() : null;
+        
+        List<RepairRecord> filtered = DatabaseManager.getInstance().getFilteredRecords(
+            dateFilter, machineFilter, spindleFilter, errorFilter);
+        
+        for (RepairRecord r : filtered) {
+            tableModel.addRow(new Object[]{
+                r.getId(),
+                r.getBreakDownDateString(),
+                r.getMachineNo(),
+                r.getSpindle(),
+                r.getRepairStatus(),
+                r.getAirCoveringError(),
+                r.getRepairError(),
+                r.getRepairReason(),
+                r.getRepairDateString(),
+                r.getSampleNo()
+            });
+        }
+        
+        recordCountLabel.setText("📋 Filtered Records: " + filtered.size());
+        updatePercentage();
+    }
+    
+    private void clearFilters() {
+        filterDateCombo.setSelectedIndex(0);
+        filterMachineCombo.setSelectedIndex(0);
+        filterSpindleCombo.setSelectedIndex(0);
+        filterErrorCombo.setSelectedIndex(0);
+        refreshTable();
+    }
+    
+    private void deleteSelectedRecord() {
+        int selectedRow = dataTable.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a record to delete", 
+                "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        int id = (Integer) tableModel.getValueAt(selectedRow, 0);
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "Are you sure you want to delete record ID: " + id + "?",
+            "Confirm Delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        
+        if (confirm == JOptionPane.YES_OPTION) {
+            DatabaseManager.getInstance().deleteRecord(id);
+            refreshTable();
+            JOptionPane.showMessageDialog(this, "Record deleted successfully!");
+        }
+    }
+    
+    private void updatePercentage() {
+        String selectedDate = filterDateCombo.getSelectedIndex() > 0 ? 
+            (String) filterDateCombo.getSelectedItem() : null;
+        
+        if (selectedDate != null) {
+            try {
+                LocalDate date = LocalDate.parse(selectedDate, formatter);
+                double pct = DatabaseManager.getInstance().calculateDailyPercentage(date);
+                int errorCount = DatabaseManager.getInstance().getErrorCountForDate(date);
+                int totalCount = DatabaseManager.getInstance().getTotalCountForDate(date);
+                percentageLabel.setText(String.format("📈 Daily Error %%: %.2f%% (%d/%d)", pct, errorCount, totalCount));
+            } catch (Exception e) {
+                percentageLabel.setText("📈 Daily Error %: N/A");
+            }
+        } else {
+            percentageLabel.setText("📈 Daily Error %: Select a date");
+        }
+    }
+}
+: package com.repair;
+
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjusters;
+import java.util.*;
+import java.util.List;
+
+public class WeeklyReportPanel extends JPanel {
+    private JTable reportTable;
+    private DefaultTableModel reportModel;
+    private JComboBox<String> weekCombo;
+    private JButton generateButton;
+    private JLabel summaryLabel;
+    
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+    private static final String[] DAYS = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    
+    public WeeklyReportPanel() {
+        initComponents();
+    }
+    
+    private void initComponents() {
+        setLayout(new BorderLayout(10, 10));
+        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        setBackground(new Color(245, 247, 250));
+        
+        JLabel titleLabel = new JLabel("📈 Weekly Repair Error Percentage Report", SwingConstants.LEFT);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        titleLabel.setForeground(new Color(33, 37, 41));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 5));
+        controlPanel.setBackground(new Color(230, 235, 240));
+        controlPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(180, 180, 180)),
+            BorderFactory.createEmptyBorder(10, 15, 10, 15)
+        ));
+        
+        controlPanel.add(new JLabel("📅 Select Week:"));
+        weekCombo = new JComboBox<>();
+        weekCombo.setPreferredSize(new Dimension(300, 30));
+        weekCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        populateWeekCombo();
+        controlPanel.add(weekCombo);
+        
+        generateButton = new JButton("📊 Generate Report");
+        generateButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        generateButton.setBackground(new Color(0, 123, 255));
+        generateButton.setForeground(Color.WHITE);
+        generateButton.setFocusPainted(false);
+        generateButton.setPreferredSize(new Dimension(150, 32));
+        generateButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        controlPanel.add(generateButton);
+        
+        add(controlPanel, BorderLayout.NORTH);
+        
+        String[] columns = {"Day", "Date", "Total Records", "Error Count", "Error Percentage (%)", "Status"};
+        reportModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        
+        reportTable = new JTable(reportModel);
+        reportTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        reportTable.setRowHeight(32);
+        reportTable.setGridColor(new Color(220, 220, 220));
+        reportTable.setShowGrid(true);
+        
+        JTableHeader header = reportTable.getTableHeader();
+        header.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        header.setBackground(new Color(40, 167, 69));
+        header.setForeground(Color.WHITE);
+        header.setPreferredSize(new Dimension(header.getWidth(), 38));
+        
+        TableColumnModel colModel = reportTable.getColumnModel();
+        colModel.getColumn(0).setPreferredWidth(120);
+        colModel.getColumn(1).setPreferredWidth(120);
+        colModel.getColumn(2).setPreferredWidth(100);
+        colModel.getColumn(3).setPreferredWidth(100);
+        colModel.getColumn(4).setPreferredWidth(140);
+        colModel.getColumn(5).setPreferredWidth(150);
+        
+        reportTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 249, 250));
+                    
+                    if (column == 4 && value != null) {
+                        String pctStr = value.toString().replace("%", "").trim();
+                        try {
+                            double pct = Double.parseDouble(pctStr);
+                            if (pct >= 50) {
+                                c.setForeground(new Color(220, 53, 69));
+                                c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                            } else if (pct >= 25) {
+                                c.setForeground(new Color(255, 140, 0));
+                                c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                            } else if (pct > 0) {
+                                c.setForeground(new Color(40, 167, 69));
+                                c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                            } else {
+                                c.setForeground(new Color(108, 117, 125));
+                            }
+                        } catch (Exception e) {
+                            c.setForeground(Color.BLACK);
+                        }
+                    } else if (column == 5 && value != null) {
+                        String status = value.toString();
+                        if (status.contains("🔴")) {
+                            c.setForeground(new Color(220, 53, 69));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        } else if (status.contains("🟠")) {
+                            c.setForeground(new Color(255, 140, 0));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        } else if (status.contains("🟢")) {
+                            c.setForeground(new Color(40, 167, 69));
+                            c.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                        } else {
+                            c.setForeground(Color.BLACK);
+                        }
+                    } else {
+                        c.setForeground(Color.BLACK);
+                        c.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                    }
+                }
+                setHorizontalAlignment(column >= 2 ? SwingConstants.CENTER : SwingConstants.LEFT);
+                return c;
+            }
+        });
+        
+        JScrollPane scrollPane = new JScrollPane(reportTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200)));
+        add(scrollPane, BorderLayout.CENTER);
+        
+        JPanel summaryPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 10));
+        summaryPanel.setBackground(new Color(230, 235, 240));
+        summaryPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(180, 180, 180)),
+            BorderFactory.createEmptyBorder(10, 15, 10, 15)
+        ));
+        
+        summaryLabel = new JLabel("📊 Weekly Summary: Select a week and click Generate");
+        summaryLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        summaryPanel.add(summaryLabel);
+        
+        add(summaryPanel, BorderLayout.SOUTH);
+        
+        generateButton.addActionListener(e -> generateReport());
+        
+        if (weekCombo.getItemCount() > 0) {
+            weekCombo.setSelectedIndex(0);
+            generateReport();
+        }
+    }
+    
+    private void populateWeekCombo() {
+        LocalDate today = LocalDate.now();
+        LocalDate startOfPeriod = LocalDate.of(2026, 7, 1);
+        LocalDate endDate = today.plusWeeks(2);
+        
+        LocalDate currentWeek = startOfPeriod.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        
+        while (!currentWeek.isAfter(endDate)) {
+            LocalDate weekEnd = currentWeek.plusDays(6);
+            String weekLabel = String.format("Week of %s - %s", 
+                currentWeek.format(formatter), weekEnd.format(formatter));
+            weekCombo.addItem(weekLabel);
+            currentWeek = currentWeek.plusWeeks(1);
+        }
+    }
+    
+    public void refreshReport() {
+        populateWeekCombo();
+        generateReport();
+    }
+    
+    private void generateReport() {
+        reportModel.setRowCount(0);
+        
+        String selectedWeek = (String) weekCombo.getSelectedItem();
+        if (selectedWeek == null) return;
+        
+        String datePart = selectedWeek.replace("Week of ", "").split(" - ")[0];
+        LocalDate weekStart = LocalDate.parse(datePart, formatter);
+        
+        DatabaseManager db = DatabaseManager.getInstance();
+        
+        double totalPct = 0;
+        int daysWithData = 0;
+        int totalRecords = 0;
+        int totalErrors = 0;
+        
+        for (int i = 0; i < 7; i++) {
+            LocalDate dayDate = weekStart.plusDays(i);
+            double pct = db.calculateDailyPercentage(dayDate);
+            int dayTotal = db.getTotalCountForDate(dayDate);
+            int dayErrors = db.getErrorCountForDate(dayDate);
+            
+            totalRecord
+
+
+
